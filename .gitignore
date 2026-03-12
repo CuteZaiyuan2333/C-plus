@@ -1,0 +1,7 @@
+conductor/
+*.exe
+**/build/
+**/target/
+**/.temp/
+*.pdb
+*.d

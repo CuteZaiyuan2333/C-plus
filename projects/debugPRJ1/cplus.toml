@@ -1,0 +1,11 @@
+[package]
+name = "debugPRJ1"
+version = "0.1.0"
+type = "bin"
+
+[build]
+flags = ["-Wall"]
+
+[profile.debug]
+flags = ["-g"]
+opt_level = 0
