@@ -19,13 +19,27 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Build { debug } => {
-            build_project(&current_dir, debug)?;
+            if let Err(e) = build_project(&current_dir, debug) {
+                if !e.to_string().contains("Stopping due to") {
+                    eprintln!("Error: {}", e);
+                }
+                std::process::exit(1);
+            }
         }
         Commands::Run { debug } => {
-            let exe_path = build_project(&current_dir, debug)?;
-            println!("Running project...");
-            let mut run = Command::new(exe_path).spawn()?;
-            run.wait()?;
+            match build_project(&current_dir, debug) {
+                Ok(exe_path) => {
+                    println!("Running project...");
+                    let mut run = Command::new(exe_path).spawn()?;
+                    run.wait()?;
+                }
+                Err(e) => {
+                    if !e.to_string().contains("Stopping due to") {
+                        eprintln!("Error: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            }
         }
         Commands::Init { name } => {
             let project_name = name.unwrap_or_else(|| "new_project".to_string());
@@ -36,8 +50,7 @@ fn main() -> Result<()> {
             let toml_content = format!(
 r#"[package]
 name = "{}"
-version = "0.1.0"
-type = "bin"
+_version = "0.1.0"
 
 [build]
 flags = ["-Wall"]

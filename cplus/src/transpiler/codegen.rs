@@ -10,25 +10,31 @@ pub enum OwnershipStatus {
 
 pub struct Generator {
     output: String,
+    spawn_decls: String,
+    spawn_funcs: String,
     indent_level: usize,
     struct_registry: HashMap<String, StructDef>,
     scope_vars: Vec<HashMap<String, (String, OwnershipStatus)>>, 
     defined_destructors: Vec<String>,
+    spawn_counter: usize,
 }
 
 impl Generator {
     pub fn new() -> Self {
         Self {
             output: String::new(),
+            spawn_decls: String::new(),
+            spawn_funcs: String::new(),
             indent_level: 0,
             struct_registry: HashMap::new(),
             scope_vars: vec![HashMap::new()],
             defined_destructors: Vec::new(),
+            spawn_counter: 0,
         }
     }
 
     pub fn generate(&mut self, ast: &[Node<Statement>]) -> String {
-        self.output.push_str("#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdbool.h>\n\n");
+        self.output.push_str("#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdbool.h>\n#include <pthread.h>\n\n");
         
         for node in ast {
             self.pre_register(&node.data);
@@ -49,6 +55,9 @@ impl Generator {
             self.generate_struct_def(&def);
         }
 
+        // 占位符用于插入 spawn 相关的声明
+        self.output.push_str("/*SPAWN_DECLS*/\n\n");
+
         for node in ast {
             match &node.data {
                 Statement::StructDef(_) => {},
@@ -66,7 +75,12 @@ impl Generator {
             }
         }
 
-        self.output.clone()
+        let mut final_output = self.output.clone();
+        final_output = final_output.replace("/*SPAWN_DECLS*/", &self.spawn_decls);
+        final_output.push_str("\n");
+        final_output.push_str(&self.spawn_funcs);
+
+        final_output
     }
 
     fn pre_register(&mut self, stmt: &Statement) {
@@ -93,11 +107,17 @@ impl Generator {
                     let new_def = StructDef { name: fork.new_name.clone(), fields: new_fields };
                     self.struct_registry.insert(new_def.name.clone(), new_def.clone());
                     
+                    if self.defined_destructors.contains(&fork.base_name) {
+                        self.defined_destructors.push(fork.new_name.clone());
+                    }
+
                     for bop in &fork.bind_ops {
                         match bop {
                             BindOp::Add(func) | BindOp::Patch { new_fn_def: func, .. } => {
                                 if func.name == "destroy" {
-                                    self.defined_destructors.push(fork.new_name.clone());
+                                    if !self.defined_destructors.contains(&fork.new_name) {
+                                        self.defined_destructors.push(fork.new_name.clone());
+                                    }
                                 }
                             }
                             _ => {}
@@ -216,7 +236,7 @@ impl Generator {
                 if let Some(init) = &decl.init {
                     let translated = self.translate_expr(init);
                     self.output.push_str(&format!("= {};\n", translated));
-                    if let Expression::Identifier(name) = init {
+                    if let Expression::Identifier(name) = &init.data {
                         self.mark_moved(name);
                     }
                 } else {
@@ -235,7 +255,7 @@ impl Generator {
                     for arg in &call.args {
                         let arg_translated = self.translate_expr(arg);
                         self.output.push_str(&format!(", {}", arg_translated));
-                        if let Expression::Identifier(name) = arg {
+                        if let Expression::Identifier(name) = &arg.data {
                             self.mark_moved(name);
                         }
                     }
@@ -254,12 +274,27 @@ impl Generator {
                 }
             }
             Statement::Return(expr) => {
+                let mut to_destroy = Vec::new();
+                for scope in self.scope_vars.iter().rev() {
+                    for (name, (ty, status)) in scope {
+                        if *status == OwnershipStatus::Active && self.defined_destructors.contains(ty) {
+                            to_destroy.push((name.clone(), ty.clone()));
+                        }
+                    }
+                }
+                
+                for (name, ty) in to_destroy {
+                    self.push_indent();
+                    self.output.push_str(&format!("{}_destroy(&{});\n", ty, name));
+                    self.mark_moved(&name);
+                }
+
                 self.push_indent();
                 self.output.push_str("return");
                 if let Some(e) = expr {
                     let translated = self.translate_expr(e);
                     self.output.push_str(&format!(" {}", translated));
-                    if let Expression::Identifier(name) = e {
+                    if let Expression::Identifier(name) = &e.data {
                         self.mark_moved(name);
                     }
                 }
@@ -286,84 +321,147 @@ impl Generator {
                 self.output.push_str(c);
                 self.output.push_str("\n");
             }
+            Statement::Spawn(func, args) => self.generate_spawn(func, args),
             Statement::ForkBlock(_) => {},
         }
     }
 
-    fn translate_expr(&mut self, expr: &Expression) -> String {
-        match expr {
+    fn generate_spawn(&mut self, func: &str, args: &[Node<Expression>]) {
+        let id = self.spawn_counter;
+        self.spawn_counter += 1;
+        
+        let mut arg_infos = Vec::new();
+        for arg in args {
+            let (ty, is_ptr) = self.get_type_info(arg);
+            let mut final_ty = ty;
+            if final_ty == "Unknown" {
+                 if let Expression::Identifier(name) = &arg.data {
+                     final_ty = name.clone();
+                 }
+            }
+            arg_infos.push((final_ty, is_ptr, self.translate_expr(arg)));
+        }
+
+        let struct_name = format!("_spawn_args_{}", id);
+        let wrapper_name = format!("_spawn_wrapper_{}", id);
+
+        self.spawn_decls.push_str(&format!("typedef struct {} {{\n", struct_name));
+        for (i, (ty, is_ptr, _)) in arg_infos.iter().enumerate() {
+            let ptr_mark = if *is_ptr { "*" } else { "" };
+            self.spawn_decls.push_str(&format!("    {}{} arg{};\n", ty, ptr_mark, i));
+        }
+        self.spawn_decls.push_str(&format!("}} {};\n", struct_name));
+        self.spawn_decls.push_str(&format!("void* {}(void* raw_arg);\n\n", wrapper_name));
+        
+        let mut wrapper = format!("void* {}(void* raw_arg) {{\n", wrapper_name);
+        wrapper.push_str(&format!("    {}* args = ({}*)raw_arg;\n", struct_name, struct_name));
+        
+        let mut call_args = Vec::new();
+        for (i, (ty, is_ptr, _)) in arg_infos.iter().enumerate() {
+            wrapper.push_str(&format!("    {}{} val{} = args->arg{};\n", ty, if *is_ptr { "*" } else { "" }, i, i));
+            call_args.push(format!("val{}", i));
+        }
+        wrapper.push_str("    free(args);\n\n");
+        wrapper.push_str(&format!("    {}({});\n\n", func, call_args.join(", ")));
+        
+        for (i, (ty, is_ptr, _)) in arg_infos.iter().enumerate() {
+            if self.defined_destructors.contains(ty) {
+                if *is_ptr { wrapper.push_str(&format!("    {}_destroy(val{});\n", ty, i)); }
+                else { wrapper.push_str(&format!("    {}_destroy(&val{});\n", ty, i)); }
+            }
+        }
+        wrapper.push_str("    return NULL;\n}\n\n");
+        self.spawn_funcs.push_str(&wrapper);
+
+        self.push_indent();
+        self.output.push_str("{\n");
+        self.indent_level += 1;
+        self.push_indent();
+        self.output.push_str(&format!("{}* spawn_args = malloc(sizeof({}));\n", struct_name, struct_name));
+        for (i, (_, _, val_str)) in arg_infos.iter().enumerate() {
+            self.push_indent();
+            self.output.push_str(&format!("spawn_args->arg{} = {};\n", i, val_str));
+            if let Expression::Identifier(name) = &args[i].data {
+                self.mark_moved(name);
+            }
+        }
+        self.push_indent();
+        self.output.push_str("pthread_t thread_id;\n");
+        self.push_indent();
+        self.output.push_str(&format!("pthread_create(&thread_id, NULL, {}, spawn_args);\n", wrapper_name));
+        self.push_indent();
+        self.output.push_str("pthread_detach(thread_id);\n");
+        self.indent_level -= 1;
+        self.push_indent();
+        self.output.push_str("}\n");
+    }
+
+    fn translate_receiver(&mut self, expr: &Node<Expression>) -> String {
+        match &expr.data {
             Expression::Identifier(name) => name.clone(),
+            _ => self.translate_expr(expr),
+        }
+    }
+
+    fn translate_expr(&mut self, expr: &Node<Expression>) -> String {
+        match &expr.data {
+            Expression::Identifier(name) => {
+                let (_, is_ptr) = self.get_type_info(expr);
+                if is_ptr { format!("(*{})", name) } else { name.clone() }
+            },
             Expression::Number(n) => n.clone(),
             Expression::StringLiteral(s) => format!("\"{}\"", s),
             Expression::BinaryOp(left, op, right) => {
                 let l_str = self.translate_expr(left);
                 let r_str = self.translate_expr(right);
-                if op == "" {
-                    return format!("{} {}", l_str, r_str);
-                }
+                if op == "" { return format!("{} {}", l_str, r_str); }
                 if op == "=" {
-                    if let Expression::Identifier(name) = right.as_ref() {
-                        self.mark_moved(name);
-                    }
+                    if let Expression::Identifier(name) = &right.data { self.mark_moved(name); }
                 }
                 format!("({}) {} ({})", l_str, op, r_str)
             }
             Expression::Assignment(name, val) => {
                 let val_str = self.translate_expr(val);
-                if let Expression::Identifier(vname) = val.as_ref() {
-                    self.mark_moved(vname);
-                }
+                if let Expression::Identifier(vname) = &val.data { self.mark_moved(vname); }
                 format!("{} = {}", name, val_str)
             }
             Expression::Call(name, args) => {
                 let mut arg_strs = Vec::new();
                 for arg in args {
                     let arg_str = self.translate_expr(arg);
-                    if let Expression::Identifier(aname) = arg {
-                        self.mark_moved(aname);
-                    }
+                    if let Expression::Identifier(aname) = &arg.data { self.mark_moved(aname); }
                     arg_strs.push(arg_str);
                 }
                 format!("{}({})", name, arg_strs.join(", "))
             }
             Expression::MethodCall { receiver, method, args } => {
                 let (obj_ty, is_ptr) = self.get_type_info(receiver);
-                let receiver_raw = self.translate_expr(receiver);
-                
+                let receiver_raw = self.translate_receiver(receiver);
                 if method == "clone" {
-                    if is_ptr {
-                        return format!("{}_clone({})", obj_ty, receiver_raw);
-                    } else {
-                        return format!("{}_clone(&{})", obj_ty, receiver_raw);
-                    }
+                    if is_ptr { return format!("{}_clone({})", obj_ty, receiver_raw); }
+                    else { return format!("{}_clone(&{})", obj_ty, receiver_raw); }
                 }
-
                 let mut arg_strs = Vec::new();
-                if is_ptr {
-                    arg_strs.push(receiver_raw);
-                } else {
-                    arg_strs.push(format!("&{}", receiver_raw));
-                }
+                if is_ptr { arg_strs.push(receiver_raw); }
+                else { arg_strs.push(format!("&{}", receiver_raw)); }
                 for arg in args {
                     let arg_str = self.translate_expr(arg);
-                    if let Expression::Identifier(aname) = arg {
-                        self.mark_moved(aname);
-                    }
+                    if let Expression::Identifier(aname) = &arg.data { self.mark_moved(aname); }
                     arg_strs.push(arg_str);
                 }
                 format!("{}_{}({})", obj_ty, method, arg_strs.join(", "))
             }
             Expression::MemberAccess { receiver, member, is_ptr: force_ptr } => {
                 let (_, is_ptr) = self.get_type_info(receiver);
-                let receiver_raw = self.translate_expr(receiver);
+                let receiver_raw = self.translate_receiver(receiver);
                 let op = if is_ptr || *force_ptr { "->" } else { "." };
                 format!("{}{}{}", receiver_raw, op, member)
             }
         }
     }
 
-    fn get_type_info(&self, expr: &Expression) -> (String, bool) {
-        match expr {
+    fn get_type_info(&self, expr_node: &Node<Expression>) -> (String, bool) {
+        match &expr_node.data {
             Expression::Identifier(name) => {
                 for scope in self.scope_vars.iter().rev() {
                     if let Some((ty, status)) = scope.get(name) {
@@ -398,8 +496,6 @@ impl Generator {
     }
 
     fn push_indent(&mut self) {
-        for _ in 0..self.indent_level {
-            self.output.push_str("    ");
-        }
+        for _ in 0..self.indent_level { self.output.push_str("    "); }
     }
 }

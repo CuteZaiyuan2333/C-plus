@@ -19,15 +19,16 @@ pub enum Statement {
     LetDeclaration(VariableDeclaration),
     UnsafeDeclaration(VariableDeclaration),
     AliasDeclaration(AliasDeclaration),
-    Expression(Expression),
-    Return(Option<Expression>),
+    Expression(Node<Expression>),
+    Return(Option<Node<Expression>>),
     Block(Vec<Node<Statement>>),
     If {
-        condition: Expression,
+        condition: Node<Expression>,
         then_branch: Box<Node<Statement>>,
         else_branch: Option<Box<Node<Statement>>>,
     },
     RawC(String),
+    Spawn(String, Vec<Node<Expression>>),
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +49,7 @@ pub struct StructDef {
 pub struct Field {
     pub name: String,
     pub ty: String,
-    pub default_value: Option<Expression>,
+    pub default_value: Option<Node<Expression>>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,9 +83,10 @@ pub enum ForkOp {
 #[derive(Debug, Clone)]
 pub enum BindOp {
     Add(FunctionDef),
+    #[allow(dead_code)]
     Remove(String),
     Patch {
-        old_fn_name: String,
+        _old_fn_name: String,
         new_fn_def: FunctionDef,
     },
 }
@@ -93,32 +95,33 @@ pub enum BindOp {
 pub struct VariableDeclaration {
     pub ty: String,
     pub name: String,
-    pub init: Option<Expression>,
+    pub init: Option<Node<Expression>>,
     pub constructor_call: Option<ConstructorCall>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ConstructorCall {
-    pub name: String,
-    pub args: Vec<Expression>,
+    pub _name: String,
+    pub args: Vec<Node<Expression>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Identifier(String),
     Number(String),
-    BinaryOp(Box<Expression>, String, Box<Expression>),
+    BinaryOp(Box<Node<Expression>>, String, Box<Node<Expression>>),
     MethodCall {
-        receiver: Box<Expression>,
+        receiver: Box<Node<Expression>>,
         method: String,
-        args: Vec<Expression>,
+        args: Vec<Node<Expression>>,
     },
     MemberAccess {
-        receiver: Box<Expression>,
+        receiver: Box<Node<Expression>>,
         member: String,
         is_ptr: bool,
     },
-    Assignment(String, Box<Expression>),
+    #[allow(dead_code)]
+    Assignment(String, Box<Node<Expression>>),
     StringLiteral(String),
-    Call(String, Vec<Expression>),
+    Call(String, Vec<Node<Expression>>),
 }

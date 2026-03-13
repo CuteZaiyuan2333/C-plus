@@ -18,9 +18,9 @@ pub struct Config {
 #[derive(Debug, Deserialize, Default)]
 pub struct Package {
     pub name: String,
-    pub version: String,
+    pub _version: String,
     #[serde(default = "default_type")]
-    pub r#type: String,
+    pub _type: String,
 }
 
 fn default_type() -> String { "bin".to_string() }
@@ -47,8 +47,8 @@ pub struct Profile {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Dependency {
-    Path { path: String },
-    System { system: bool, version: Option<String> },
+    Path { _path: String },
+    System { system: bool, _version: Option<String> },
 }
 
 impl Config {

@@ -62,6 +62,7 @@ impl<'a> Parser<'a> {
                 "alias" => Some(Node { data: Statement::AliasDeclaration(self.parse_alias()), span }),
                 "return" => Some(Node { data: Statement::Return(self.parse_return()), span }),
                 "if" => Some(self.parse_if()),
+                "spawn" => Some(self.parse_spawn()),
                 _ => {
                     // println!("DEBUG: Keyword fell through to default: {:?}", kw);
                     let expr = self.parse_expression(0);
@@ -78,7 +79,9 @@ impl<'a> Parser<'a> {
             TokenData::Symbol(';') => { self.advance(); None },
             TokenData::Identifier(_) => {
                 if let TokenData::Identifier(_) = &self.peek_token.data {
+                    let ty_span = self.current_token.span;
                     let ty = self.read_identifier();
+                    let name_span = self.current_token.span;
                     let name = self.read_identifier();
                     if let TokenData::Symbol('(') = self.current_token.data {
                         self.advance(); // (
@@ -87,9 +90,9 @@ impl<'a> Parser<'a> {
                         let body = self.parse_block_node();
                         Some(Node { data: Statement::FunctionDef(FunctionDef { name, params, return_ty: ty, body: Box::new(body) }), span })
                     } else {
-                         let left = Expression::Identifier(ty);
-                         let right = Expression::Identifier(name);
-                         let expr = Expression::BinaryOp(Box::new(left), " ".to_string(), Box::new(right));
+                         let left = Node { data: Expression::Identifier(ty), span: ty_span };
+                         let right = Node { data: Expression::Identifier(name), span: name_span };
+                         let expr = Node { data: Expression::BinaryOp(Box::new(left), " ".to_string(), Box::new(right)), span };
                          Some(Node { data: Statement::Expression(expr), span })
                     }
                 } else if let TokenData::Symbol('(') = &self.peek_token.data {
@@ -173,6 +176,9 @@ impl<'a> Parser<'a> {
     fn parse_parameters(&mut self) -> Vec<(String, String)> {
         let mut params = Vec::new();
         while !matches!(self.current_token.data, TokenData::Symbol(')') | TokenData::EOF) {
+            if let TokenData::Keyword(kw) = &self.current_token.data {
+                if kw == "let" { self.advance(); }
+            }
             let first = self.read_identifier();
             match &self.current_token.data {
                 TokenData::Identifier(second) => {
@@ -222,7 +228,7 @@ impl<'a> Parser<'a> {
                 self.expect_symbol('(');
                 let args = self.parse_expression_list();
                 self.expect_symbol(')');
-                constructor_call = Some(ConstructorCall { name: c_name, args });
+                constructor_call = Some(ConstructorCall { _name: c_name, args });
             }
             TokenData::Operator(op) if op == "=" => {
                 self.advance();
@@ -239,7 +245,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression_list(&mut self) -> Vec<Expression> {
+    fn parse_expression_list(&mut self) -> Vec<Node<Expression>> {
         let mut list = Vec::new();
         while !matches!(self.current_token.data, TokenData::Symbol(')') | TokenData::EOF) {
             list.push(self.parse_expression(0));
@@ -326,7 +332,7 @@ impl<'a> Parser<'a> {
                             if let TokenData::Keyword(kw2) = &self.current_token.data {
                                 if kw2 == "as" { self.advance(); }
                             }
-                            bind_ops.push(BindOp::Patch { old_fn_name: _old_name, new_fn_def: self.parse_function_inner() });
+                            bind_ops.push(BindOp::Patch { _old_fn_name: _old_name, new_fn_def: self.parse_function_inner() });
                         }
                         _ => bind_ops.push(BindOp::Add(self.parse_function_inner())),
                     }
@@ -354,7 +360,7 @@ impl<'a> Parser<'a> {
         Node { data: Statement::If { condition, then_branch, else_branch }, span }
     }
 
-    fn parse_return(&mut self) -> Option<Expression> {
+    fn parse_return(&mut self) -> Option<Node<Expression>> {
         self.advance(); // return
         if let TokenData::Symbol(';') = self.current_token.data {
             self.advance();
@@ -366,7 +372,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression(&mut self, precedence: i8) -> Expression {
+    fn parse_spawn(&mut self) -> Node<Statement> {
+        let span = self.current_token.span;
+        self.advance(); // spawn
+        let func_name = self.read_identifier();
+        self.expect_symbol('(');
+        let args = self.parse_expression_list();
+        self.expect_symbol(')');
+        self.consume_optional_semi();
+        Node { data: Statement::Spawn(func_name, args), span }
+    }
+
+    fn parse_expression(&mut self, precedence: i8) -> Node<Expression> {
         let mut left = self.parse_primary();
         
         while let TokenData::Operator(ref op) = self.current_token.data {
@@ -381,19 +398,23 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let args = self.parse_expression_list();
                     self.expect_symbol(')');
-                    left = Expression::MethodCall { receiver: Box::new(left), method: member, args };
+                    let span = left.span;
+                    left = Node { data: Expression::MethodCall { receiver: Box::new(left), method: member, args }, span };
                 } else {
-                    left = Expression::MemberAccess { receiver: Box::new(left), member, is_ptr: op_clone == "->" };
+                    let span = left.span;
+                    left = Node { data: Expression::MemberAccess { receiver: Box::new(left), member, is_ptr: op_clone == "->" }, span };
                 }
             } else {
                 let right = self.parse_expression(p);
-                left = Expression::BinaryOp(Box::new(left), op_clone, Box::new(right));
+                let span = left.span;
+                left = Node { data: Expression::BinaryOp(Box::new(left), op_clone, Box::new(right)), span };
             }
         }
         left
     }
 
-    fn parse_primary(&mut self) -> Expression {
+    fn parse_primary(&mut self) -> Node<Expression> {
+        let span = self.current_token.span;
         match self.current_token.data.clone() {
             TokenData::Identifier(s) => {
                 self.advance();
@@ -401,17 +422,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let args = self.parse_expression_list();
                     self.expect_symbol(')');
-                    Expression::Call(s, args)
+                    Node { data: Expression::Call(s, args), span }
                 } else {
-                    Expression::Identifier(s)
+                    Node { data: Expression::Identifier(s), span }
                 }
             }
             TokenData::Keyword(s) if s == "host" => {
                 self.advance();
-                Expression::Identifier("host".to_string())
+                Node { data: Expression::Identifier("host".to_string()), span }
             }
-            TokenData::Number(s) => { self.advance(); Expression::Number(s) }
-            TokenData::StringLiteral(s) => { self.advance(); Expression::StringLiteral(s) }
+            TokenData::Number(s) => { self.advance(); Node { data: Expression::Number(s), span } }
+            TokenData::StringLiteral(s) => { self.advance(); Node { data: Expression::StringLiteral(s), span } }
             TokenData::Symbol('(') => {
                 self.advance();
                 let expr = self.parse_expression(0);
@@ -420,9 +441,12 @@ impl<'a> Parser<'a> {
                 // C style cast: (type)expr
                 // If the next token could start an expression, this might be a cast
                 if let TokenData::Identifier(_) | TokenData::Number(_) | TokenData::Symbol('(') | TokenData::StringLiteral(_) = self.current_token.data {
-                    if let Expression::Identifier(ty) = expr {
+                    if let Expression::Identifier(ty) = &expr.data {
+                         let ty_clone = ty.clone();
                          let inner = self.parse_expression(100); // High precedence for cast
-                         return Expression::BinaryOp(Box::new(Expression::Identifier(format!("({})", ty))), "".to_string(), Box::new(inner));
+                         let cast_span = expr.span;
+                         let left_node = Node { data: Expression::Identifier(format!("({})", ty_clone)), span: cast_span };
+                         return Node { data: Expression::BinaryOp(Box::new(left_node), "".to_string(), Box::new(inner)), span: cast_span };
                     }
                 }
                 expr

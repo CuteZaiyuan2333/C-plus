@@ -15,7 +15,7 @@ int main() {
     let data d3.data(30);
     alias data a2 = d3;
     alias data a3 = d3;
-    // printf("Read d3: %d, %d\n", a2->value, a3->value);
+    printf("Read d3: %d, %d\n", a2->value, a3->value);
 
     // 3. 测试可变借用冲突 (应该报错)
     let data d4.data(40);
@@ -26,7 +26,7 @@ int main() {
     let data d5.data(50);
     {
         alias mut data m2 = d5;
-        // m2->value = 51;
+        m2->value = 51;
     } 
     let data d6 = d5; // 此处应允许，因为 m2 已失效
     

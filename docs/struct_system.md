@@ -24,20 +24,19 @@ bind example {
 ---
 
 ## 2. 结构化演进 (Fork)
+## 2. 结构复刻与演进 (Fork)
 
-`fork` 允许开发者在不修改原结构体的前提下，基于现有结构体生成新类型。
+`fork` 是一个极简的**结构体生成器**，允许开发者基于现有结构体快速克隆并差异化定制新类型，而无需手动复制字段。
 
 ```cpp
 fork example as enhanced_example {
-    + float score = 0.0; // 添加字段
-    - number;            // 移除字段
-} bind enhanced_example {
-    + void display() { printf("%f\n", host.score); } // 添加方法
-    patch example(n) as enhanced_example(n) {
-        host.score = (float)n;
-    } // 重新实现构造逻辑
+    + float score = 0.0; // 增加新字段
+    - number;            // 移除不需要的字段
 }
 ```
 
-- **极简语义**: 只定义差异，转译器负责生成全新的底层结构体。
-- **与 C 互操作**: 生成的新类型依然是标准的 C 结构体。
+- **静态复刻 (Static Cloning)**: `fork` 不属于 OOP 意义上的“类继承”。它在转译阶段生成一个**完全独立、扁平化**的 C 结构体。
+- **差异化定义**: 只需声明与基类的差异 (`+` 或 `-`)，转译器会自动聚合所有字段。
+- **0 运行时开销**: 由于不涉及虚表或动态绑定，生成的代码与手写 C 结构体性能完全一致。
+- **与 C 互操作**: 生成的新类型依然是标准的 C 结构体，可直接用于原生 C 库调用。
+

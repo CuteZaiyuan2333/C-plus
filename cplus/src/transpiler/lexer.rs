@@ -51,7 +51,7 @@ impl<'a> Lexer<'a> {
         if ch.is_alphabetic() || ch == '_' {
             let ident = self.read_identifier();
             let data = match ident.as_str() {
-                "let" | "unsafe" | "struct" | "bind" | "fork" | "patch" | "host" | "as" | "alias" | "mut" | "return" | "if" | "else" => {
+                "let" | "unsafe" | "struct" | "bind" | "fork" | "patch" | "host" | "as" | "alias" | "mut" | "return" | "if" | "else" | "spawn" => {
                     TokenData::Keyword(ident)
                 }
                 _ => TokenData::Identifier(ident),

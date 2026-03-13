@@ -1,0 +1,15 @@
+[package]
+name = "demo_project"
+version = "0.1.0"
+_version = "0.1.0"
+type = "bin"
+
+[build]
+flags = ["-Wall"]
+
+[profile.debug]
+flags = ["-g"]
+opt_level = 0
+
+[profile.release]
+opt_level = 3
