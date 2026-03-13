@@ -123,7 +123,16 @@ impl<'a> Parser<'a> {
         self.expect_symbol('{');
         let mut fields = Vec::new();
         while !matches!(self.current_token.data, TokenData::Symbol('}') | TokenData::EOF) {
-            let ty = self.read_identifier();
+            let mut ty = self.read_identifier();
+            // 支持指针类型，如 char*
+            while let TokenData::Operator(ref op) = self.current_token.data {
+                if op == "*" {
+                    ty.push('*');
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
             let field_name = self.read_identifier();
             let mut default_value = None;
             if let TokenData::Operator(ref op) = self.current_token.data {
@@ -179,15 +188,23 @@ impl<'a> Parser<'a> {
             if let TokenData::Keyword(kw) = &self.current_token.data {
                 if kw == "let" { self.advance(); }
             }
-            let first = self.read_identifier();
+            let mut ty = self.read_identifier();
+            while let TokenData::Operator(ref op) = self.current_token.data {
+                if op == "*" {
+                    ty.push('*');
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
             match &self.current_token.data {
                 TokenData::Identifier(second) => {
                     let second_name = second.clone();
                     self.advance();
-                    params.push((first, second_name));
+                    params.push((ty, second_name));
                 }
                 _ => {
-                    params.push(("int".to_string(), first));
+                    params.push(("int".to_string(), ty));
                 }
             }
             if let TokenData::Symbol(',') = self.current_token.data {

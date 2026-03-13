@@ -53,6 +53,19 @@ impl Builder {
         
         // 2. 包含路径
         command.arg(format!("-I{}", self.temp_dir.display()));
+        
+        // 自动添加 .temp 下的所有子目录到包含路径 (处理模块化项目)
+        if let Ok(entries) = fs::read_dir(&self.temp_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        command.arg(format!("-I{}", path.display()));
+                    }
+                }
+            }
+        }
+
         for inc in &self.config.build.includes {
             command.arg(format!("-I{}", self.project_root.join(inc).display()));
         }

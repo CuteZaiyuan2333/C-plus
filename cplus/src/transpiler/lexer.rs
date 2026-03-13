@@ -82,7 +82,7 @@ impl<'a> Lexer<'a> {
 
         // Symbols and single-char operators
         let data = match ch {
-            '{' | '}' | '(' | ')' | ';' | ',' | ':' => {
+            '{' | '}' | '(' | ')' | '[' | ']' | ';' | ',' | ':' => {
                 self.advance();
                 TokenData::Symbol(ch)
             }
