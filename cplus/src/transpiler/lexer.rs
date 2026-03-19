@@ -51,7 +51,7 @@ impl<'a> Lexer<'a> {
         if ch.is_alphabetic() || ch == '_' {
             let ident = self.read_identifier();
             let data = match ident.as_str() {
-                "let" | "unsafe" | "struct" | "bind" | "fork" | "patch" | "host" | "as" | "alias" | "mut" | "return" | "if" | "else" | "spawn" => {
+                "let" | "unsafe" | "struct" | "bind" | "fork" | "patch" | "host" | "as" | "alias" | "mut" | "return" | "if" | "else" | "spawn" | "for" | "while" => {
                     TokenData::Keyword(ident)
                 }
                 _ => TokenData::Identifier(ident),
@@ -78,6 +78,19 @@ impl<'a> Lexer<'a> {
         if ch == '-' && self.peek_char() == '>' {
             self.advance(); self.advance();
             return Token { data: TokenData::Operator("->".to_string()), span };
+        }
+        if (ch == '+' && self.peek_char() == '+') || 
+           (ch == '-' && self.peek_char() == '-') ||
+           (ch == '=' && self.peek_char() == '=') ||
+           (ch == '!' && self.peek_char() == '=') ||
+           (ch == '<' && self.peek_char() == '=') ||
+           (ch == '>' && self.peek_char() == '=') ||
+           (ch == '+' && self.peek_char() == '=') ||
+           (ch == '-' && self.peek_char() == '=') {
+            let mut op = ch.to_string();
+            op.push(self.peek_char());
+            self.advance(); self.advance();
+            return Token { data: TokenData::Operator(op), span };
         }
 
         // Symbols and single-char operators

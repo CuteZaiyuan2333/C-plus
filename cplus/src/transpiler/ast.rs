@@ -27,6 +27,16 @@ pub enum Statement {
         then_branch: Box<Node<Statement>>,
         else_branch: Option<Box<Node<Statement>>>,
     },
+    For {
+        init: Option<Box<Node<Statement>>>,
+        condition: Option<Node<Expression>>,
+        step: Option<Node<Expression>>,
+        body: Box<Node<Statement>>,
+    },
+    While {
+        condition: Node<Expression>,
+        body: Box<Node<Statement>>,
+    },
     RawC(String),
     Spawn(String, Vec<Node<Expression>>),
 }
@@ -122,6 +132,7 @@ pub enum Expression {
     },
     #[allow(dead_code)]
     Assignment(String, Box<Node<Expression>>),
+    UnaryOp(String, Box<Node<Expression>>, bool), // op, expr, is_postfix
     StringLiteral(String),
     Call(String, Vec<Node<Expression>>),
 }

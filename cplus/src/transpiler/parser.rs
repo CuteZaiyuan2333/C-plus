@@ -62,6 +62,8 @@ impl<'a> Parser<'a> {
                 "alias" => Some(Node { data: Statement::AliasDeclaration(self.parse_alias()), span }),
                 "return" => Some(Node { data: Statement::Return(self.parse_return()), span }),
                 "if" => Some(self.parse_if()),
+                "for" => Some(self.parse_for()),
+                "while" => Some(self.parse_while()),
                 "spawn" => Some(self.parse_spawn()),
                 _ => {
                     // println!("DEBUG: Keyword fell through to default: {:?}", kw);
@@ -92,7 +94,14 @@ impl<'a> Parser<'a> {
                     } else {
                          let left = Node { data: Expression::Identifier(ty), span: ty_span };
                          let right = Node { data: Expression::Identifier(name), span: name_span };
-                         let expr = Node { data: Expression::BinaryOp(Box::new(left), " ".to_string(), Box::new(right)), span };
+                         let mut expr = Node { data: Expression::BinaryOp(Box::new(left), " ".to_string(), Box::new(right)), span };
+                         
+                         // Check if an operator (like =) follows
+                         if let TokenData::Operator(_) = self.current_token.data {
+                             expr = self.parse_expression_resuming(expr, 0);
+                         }
+                         
+                         self.consume_optional_semi();
                          Some(Node { data: Statement::Expression(expr), span })
                     }
                 } else if let TokenData::Symbol('(') = &self.peek_token.data {
@@ -298,7 +307,15 @@ impl<'a> Parser<'a> {
             match &self.current_token.data {
                 TokenData::Operator(op) if op == "+" => {
                     self.advance();
-                    let ty = self.read_identifier();
+                    let mut ty = self.read_identifier();
+                    while let TokenData::Operator(ref next_op) = self.current_token.data {
+                        if next_op == "*" {
+                            ty.push('*');
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
                     let name = self.read_identifier();
                     let mut default_value = None;
                     if let TokenData::Operator(ref op2) = self.current_token.data {
@@ -377,6 +394,46 @@ impl<'a> Parser<'a> {
         Node { data: Statement::If { condition, then_branch, else_branch }, span }
     }
 
+    fn parse_for(&mut self) -> Node<Statement> {
+        let span = self.current_token.span;
+        self.advance(); // for
+        self.expect_symbol('(');
+        
+        let init = if let TokenData::Symbol(';') = self.current_token.data {
+            self.advance();
+            None
+        } else {
+            Some(Box::new(self.parse_statement().expect("For init must be a statement")))
+        };
+        
+        let condition = if let TokenData::Symbol(';') = self.current_token.data {
+            None
+        } else {
+            Some(self.parse_expression(0))
+        };
+        self.expect_symbol(';');
+        
+        let step = if let TokenData::Symbol(')') = self.current_token.data {
+            None
+        } else {
+            Some(self.parse_expression(0))
+        };
+        self.expect_symbol(')');
+        
+        let body = Box::new(self.parse_statement().expect("For body missing"));
+        Node { data: Statement::For { init, condition, step, body }, span }
+    }
+
+    fn parse_while(&mut self) -> Node<Statement> {
+        let span = self.current_token.span;
+        self.advance(); // while
+        self.expect_symbol('(');
+        let condition = self.parse_expression(0);
+        self.expect_symbol(')');
+        let body = Box::new(self.parse_statement().expect("While body missing"));
+        Node { data: Statement::While { condition, body }, span }
+    }
+
     fn parse_return(&mut self) -> Option<Node<Expression>> {
         self.advance(); // return
         if let TokenData::Symbol(';') = self.current_token.data {
@@ -401,8 +458,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression(&mut self, precedence: i8) -> Node<Expression> {
-        let mut left = self.parse_primary();
-        
+        let left = self.parse_primary();
+        self.parse_expression_resuming(left, precedence)
+    }
+
+    fn parse_expression_resuming(&mut self, mut left: Node<Expression>, precedence: i8) -> Node<Expression> {
         while let TokenData::Operator(ref op) = self.current_token.data {
             let p = self.get_precedence(op);
             if p <= precedence { break; }
@@ -421,6 +481,9 @@ impl<'a> Parser<'a> {
                     let span = left.span;
                     left = Node { data: Expression::MemberAccess { receiver: Box::new(left), member, is_ptr: op_clone == "->" }, span };
                 }
+            } else if op_clone == "++" || op_clone == "--" {
+                let span = left.span;
+                left = Node { data: Expression::UnaryOp(op_clone, Box::new(left), true), span };
             } else {
                 let right = self.parse_expression(p);
                 let span = left.span;
@@ -475,11 +538,11 @@ impl<'a> Parser<'a> {
 
     fn get_precedence(&self, op: &str) -> i8 {
         match op {
-            "=" => 1,
-            "==" | "!=" | "<" | ">" => 2,
+            "=" | "+=" | "-=" => 1,
+            "==" | "!=" | "<" | ">" | "<=" | ">=" => 2,
             "+" | "-" => 3,
             "*" | "/" => 4,
-            "." | "->" => 5,
+            "++" | "--" | "." | "->" => 5,
             _ => 0,
         }
     }

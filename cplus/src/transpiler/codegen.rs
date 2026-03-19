@@ -14,6 +14,7 @@ pub struct Generator {
     spawn_funcs: String,
     indent_level: usize,
     struct_registry: HashMap<String, StructDef>,
+    bind_registry: HashMap<String, Vec<FunctionDef>>,
     scope_vars: Vec<HashMap<String, (String, OwnershipStatus)>>, 
     defined_destructors: Vec<String>,
     spawn_counter: usize,
@@ -27,6 +28,7 @@ impl Generator {
             spawn_funcs: String::new(),
             indent_level: 0,
             struct_registry: HashMap::new(),
+            bind_registry: HashMap::new(),
             scope_vars: vec![HashMap::new()],
             defined_destructors: Vec::new(),
             spawn_counter: 0,
@@ -62,12 +64,9 @@ impl Generator {
             match &node.data {
                 Statement::StructDef(_) => {},
                 Statement::ForkBlock(fork) => {
-                    for bop in &fork.bind_ops {
-                        match bop {
-                            BindOp::Add(func) | BindOp::Patch { new_fn_def: func, .. } => {
-                                self.generate_bound_function(&fork.new_name, func);
-                            }
-                            _ => {}
+                    if let Some(funcs) = self.bind_registry.get(&fork.new_name).cloned() {
+                        for func in funcs {
+                            self.generate_bound_function(&fork.new_name, &func);
                         }
                     }
                 }
@@ -89,6 +88,7 @@ impl Generator {
                 self.struct_registry.insert(def.name.clone(), def.clone());
             }
             Statement::BindBlock(bind) => {
+                self.bind_registry.insert(bind.struct_name.clone(), bind.functions.clone());
                 for func in &bind.functions {
                     if func.name == "destroy" {
                         self.defined_destructors.push(bind.struct_name.clone());
@@ -107,20 +107,44 @@ impl Generator {
                     let new_def = StructDef { name: fork.new_name.clone(), fields: new_fields };
                     self.struct_registry.insert(new_def.name.clone(), new_def.clone());
                     
-                    if self.defined_destructors.contains(&fork.base_name) {
-                        self.defined_destructors.push(fork.new_name.clone());
+                    // Clone functions from base
+                    let mut new_funcs = Vec::new();
+                    if let Some(base_funcs) = self.bind_registry.get(&fork.base_name) {
+                        for mut f in base_funcs.clone() {
+                            // If it's a constructor, rename it
+                            if f.name == fork.base_name {
+                                f.name = fork.new_name.clone();
+                            }
+                            new_funcs.push(f);
+                        }
                     }
 
+                    // Apply bind operations
                     for bop in &fork.bind_ops {
                         match bop {
-                            BindOp::Add(func) | BindOp::Patch { new_fn_def: func, .. } => {
-                                if func.name == "destroy" {
-                                    if !self.defined_destructors.contains(&fork.new_name) {
-                                        self.defined_destructors.push(fork.new_name.clone());
-                                    }
-                                }
+                            BindOp::Add(func) => {
+                                // If adding a function with existing name, it's an override/add
+                                new_funcs.retain(|f| f.name != func.name);
+                                new_funcs.push(func.clone());
                             }
-                            _ => {}
+                            BindOp::Remove(name) => {
+                                new_funcs.retain(|f| &f.name != name);
+                            }
+                            BindOp::Patch { _old_fn_name: old, new_fn_def: func } => {
+                                // Patch means replace or add
+                                new_funcs.retain(|f| &f.name != old);
+                                new_funcs.push(func.clone());
+                            }
+                        }
+                    }
+
+                    self.bind_registry.insert(fork.new_name.clone(), new_funcs.clone());
+
+                    for func in &new_funcs {
+                        if func.name == "destroy" {
+                            if !self.defined_destructors.contains(&fork.new_name) {
+                                self.defined_destructors.push(fork.new_name.clone());
+                            }
                         }
                     }
                 }
@@ -317,6 +341,49 @@ impl Generator {
                 }
                 self.output.push_str("\n");
             }
+            Statement::For { init, condition, step, body } => {
+                self.push_indent();
+                self.output.push_str("for (");
+                if let Some(stmt) = init {
+                    match &stmt.data {
+                        Statement::LetDeclaration(decl) | Statement::UnsafeDeclaration(decl) => {
+                            self.output.push_str(&format!("{} {} ", decl.ty, decl.name));
+                            if let Some(expr) = &decl.init {
+                                let val = self.translate_expr(expr);
+                                self.output.push_str(&format!("= {}", val));
+                            }
+                            if let Some(scope) = self.scope_vars.last_mut() {
+                                scope.insert(decl.name.clone(), (decl.ty.clone(), OwnershipStatus::Active));
+                            }
+                        }
+                        Statement::Expression(expr) => {
+                            let val = self.translate_expr(expr);
+                            self.output.push_str(&val);
+                        }
+                        _ => {}
+                    }
+                }
+                self.output.push_str("; ");
+                if let Some(cond) = condition {
+                    let val = self.translate_expr(cond);
+                    self.output.push_str(&val);
+                }
+                self.output.push_str("; ");
+                if let Some(s) = step {
+                    let val = self.translate_expr(s);
+                    self.output.push_str(&val);
+                }
+                self.output.push_str(") ");
+                self.generate_statement(body);
+                self.output.push_str("\n");
+            }
+            Statement::While { condition, body } => {
+                self.push_indent();
+                let cond_translated = self.translate_expr(condition);
+                self.output.push_str(&format!("while ({}) ", cond_translated));
+                self.generate_statement(body);
+                self.output.push_str("\n");
+            }
             Statement::RawC(c) => {
                 self.output.push_str(c);
                 self.output.push_str("\n");
@@ -406,17 +473,17 @@ impl Generator {
     fn translate_expr(&mut self, expr: &Node<Expression>) -> String {
         match &expr.data {
             Expression::Identifier(name) => {
-                let (_, is_ptr) = self.get_type_info(expr);
-                if is_ptr { format!("(*{})", name) } else { name.clone() }
+                name.clone()
             },
             Expression::Number(n) => n.clone(),
             Expression::StringLiteral(s) => format!("\"{}\"", s),
             Expression::BinaryOp(left, op, right) => {
                 let l_str = self.translate_expr(left);
                 let r_str = self.translate_expr(right);
-                if op == "" { return format!("{} {}", l_str, r_str); }
-                if op == "=" {
+                if op == " " { return format!("{} {}", l_str, r_str); }
+                if op == "=" || op == "+=" || op == "-=" {
                     if let Expression::Identifier(name) = &right.data { self.mark_moved(name); }
+                    return format!("{} {} {}", l_str, op, r_str);
                 }
                 format!("({}) {} ({})", l_str, op, r_str)
             }
@@ -424,6 +491,11 @@ impl Generator {
                 let val_str = self.translate_expr(val);
                 if let Expression::Identifier(vname) = &val.data { self.mark_moved(vname); }
                 format!("{} = {}", name, val_str)
+            }
+            Expression::UnaryOp(op, expr, is_postfix) => {
+                let expr_str = self.translate_expr(expr);
+                if *is_postfix { format!("{}{}", expr_str, op) }
+                else { format!("{}{}", op, expr_str) }
             }
             Expression::Call(name, args) => {
                 let mut arg_strs = Vec::new();

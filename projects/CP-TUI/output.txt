@@ -1,0 +1,67 @@
+Transpiling C+ project...
+  Parsing...
+DEBUG: Initial tokens: Keyword("struct"), Identifier("Terminal")
+  Checking...
+  Generating...
+  Done.
+Building project 'CP-TUI' in release mode...
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:101:35: warning: format specifies type 'char *' but the argument has type 'char' [-Wformat]
+  101 |     printf("\x1b[%d;%dH%s", y, x, (*text));
+      |                        ~~         ^~~~~~~
+      |                        %c
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:116:18: error: incompatible integer to pointer conversion assigning to 'char *' from 'int' [-Wint-conversion]
+  116 |     (host->text) = (text);
+      |                  ^ ~~~~~~
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:132:20: error: use of undeclared identifier 'i'
+  132 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                    ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:132:32: error: use of undeclared identifier 'i'
+  132 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                                ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:132:56: error: use of undeclared identifier 'i'
+  132 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                                                        ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:135:20: error: use of undeclared identifier 'j'
+  135 |     for (((int)   (j)) = (1); (j) < ((host->h) - (1)); j++) {
+      |                    ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:135:32: error: use of undeclared identifier 'j'
+  135 |     for (((int)   (j)) = (1); (j) < ((host->h) - (1)); j++) {
+      |                                ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:135:56: error: use of undeclared identifier 'j'
+  135 |     for (((int)   (j)) = (1); (j) < ((host->h) - (1)); j++) {
+      |                                                        ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:136:45: error: use of undeclared identifier 'j'
+  136 |         printf("\x1b[%d;%dH|", (host->y) + (j), host->x);
+      |                                             ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:137:45: error: use of undeclared identifier 'j'
+  137 |         printf("\x1b[%d;%dH|", (host->y) + (j), ((host->x) + (host->w)) - (1));
+      |                                             ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:140:20: error: use of undeclared identifier 'i'
+  140 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                    ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:140:32: error: use of undeclared identifier 'i'
+  140 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                                ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:140:56: error: use of undeclared identifier 'i'
+  140 |     for (((int)   (i)) = (0); (i) < ((host->w) - (2)); i++)     printf("-");
+      |                                                        ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:157:27: error: incompatible pointer to integer conversion passing 'char[19]' to parameter of type 'int' [-Wint-conversion]
+  157 |     Label_init(&l1, 8, 7, "Ownership: Managed");
+      |                           ^~~~~~~~~~~~~~~~~~~~
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:113:48: note: passing argument to parameter 'text' here
+  113 | void Label_init(Label* host, int x, int y, int text) {
+      |                                                ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:160:27: error: incompatible pointer to integer conversion passing 'char[29]' to parameter of type 'int' [-Wint-conversion]
+  160 |     Label_init(&l2, 8, 8, "Structural Evolution: Forked");
+      |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:113:48: note: passing argument to parameter 'text' here
+  113 | void Label_init(Label* host, int x, int y, int text) {
+      |                                                ^
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:163:27: error: incompatible pointer to integer conversion passing 'char[31]' to parameter of type 'int' [-Wint-conversion]
+  163 |     Label_init(&l3, 8, 9, "Memory Safety: RAII Guaranteed");
+      |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/cutezaiyuan2333/Desktop/c-plus/CP-TUI/.temp/src/main.c:113:48: note: passing argument to parameter 'text' here
+  113 | void Label_init(Label* host, int x, int y, int text) {
+      |                                                ^
+1 warning and 15 errors generated.
+Error: Compilation failed.

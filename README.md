@@ -3,6 +3,9 @@
 C+ 是一种基于 C 语言构建的系统编程语言。它并非要取代 C 或模仿现代高级语言，而是通过引入**极少量的核心语法扩展**，在保持 C 语言纯粹性的同时，解决了资源管理、内存安全和结构化组织的痛点。
 
 > "C+ : A systems language with opt-in ownership and structural evolution, designed for seamless migration from C."
+>
+> [!IMPORTANT]
+> **项目重心变更**：团队已决定放弃 LLVM 原生后端集成，全力转向更稳定的**转译器（Transpiler）**开发，以确保与 C 语言生态的最佳兼容性与系统稳定性。
 
 ## 🚀 核心特性
 
@@ -68,7 +71,8 @@ int main() {
 目前已完成核心语义定义、所有权追踪、RAII 自动化及构建工具。未来计划包括：
 - [ ] 优化 `alias mut` 到 C 指针的转换逻辑。
 - [ ] 增强 `fork` 对复杂结构体嵌套的解析。
-- [ ] 集成 LLVM 后端，摆脱对中间 C 代码生成的依赖。
+- [ ] 持续优化转译器稳定性与 C 兼容性。
+- [ ] 完善标准库跨平台支持。
 
 ## 📜 许可
 
